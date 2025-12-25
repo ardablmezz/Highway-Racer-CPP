@@ -1,8 +1,15 @@
 #include <SFML/Graphics.hpp>
+#include <SFML/Audio.hpp>
 #include <vector>
 #include <algorithm>
 #include <cmath>
 #include <random>
+#include <iostream>
+
+enum GameState {
+	PLAYING,
+	GAMEOVER
+};
 
 struct Vec2 {
     float x, y;
@@ -11,6 +18,7 @@ struct Vec2 {
 Vec2 Lerp(const Vec2& a, const Vec2& b, float alpha) {
     return { a.x * (1.0f - alpha) + b.x * alpha, a.y * (1.0f - alpha) + b.y * alpha };
 }
+
 struct Prop {
     sf::Sprite sprite;
     float x, y;
@@ -27,7 +35,7 @@ struct Car {
     Vec2 acceleration;
     float maxSpeed;
     float damping;
-    float laneChangeCooldown; 
+    float laneChangeCooldown;
     sf::Sprite sprite;
 
     Car(Vec2 pos, Vec2 vel, sf::Texture& tex, sf::IntRect imgRect, float maxSpeed_, float damping_, int startLane) {
@@ -51,7 +59,6 @@ struct Car {
     void update(float dt, bool isPlayer = false) {
         previousPosition = position;
 
-        
         if (laneChangeCooldown > 0.f) {
             laneChangeCooldown -= dt;
         }
@@ -83,11 +90,64 @@ struct Car {
 };
 
 int main() {
-    sf::RenderWindow window(sf::VideoMode(1920, 1080), "Highway Racer - v3.0");
+    sf::RenderWindow window(sf::VideoMode(1920, 1080), "Highway Racer - v3.1");
     window.setFramerateLimit(144);
     sf::View camera(sf::FloatRect(0.f, .0f, 1920.f, 1080.f));
     std::random_device rd;
     std::mt19937 gen(rd());
+
+	GameState currentState = PLAYING;
+    sf::SoundBuffer engineBuffer;
+    bool engineLoaded = engineBuffer.loadFromFile("assets/engine.wav");
+
+    sf::Sound engineSound;
+    if (engineLoaded) {
+        engineSound.setBuffer(engineBuffer);
+        engineSound.setLoop(true);
+        engineSound.setVolume(85.f);
+        engineSound.play();
+    }
+    else {
+        std::cout << "HATA: engine.wav bulunamadi." << std::endl;
+    }
+
+    sf::SoundBuffer crashBuffer;
+    bool crashLoaded = crashBuffer.loadFromFile("assets/crash.wav");
+
+    sf::Sound crashSound;
+    if (crashLoaded) {
+        crashSound.setBuffer(crashBuffer);
+        crashSound.setVolume(80.f);
+    }
+    
+    sf::Font font;
+    if (!font.loadFromFile("C:/Windows/Fonts/arial.ttf")) {
+        if (!font.loadFromFile("assets/fixedsys.fon")) {
+            std::cout << "HATA: Font dosyasi yuklenemedi!" << std::endl;
+        }
+    }
+    sf::Text gameOverText;
+    gameOverText.setFont(font);
+    gameOverText.setString("GAME OVER");
+    gameOverText.setCharacterSize(100);
+    gameOverText.setFillColor(sf::Color::Red);
+    gameOverText.setStyle(sf::Text::Bold);
+    gameOverText.setOutlineColor(sf::Color::Black);
+    gameOverText.setOutlineThickness(5.f);
+
+    sf::FloatRect goBounds = gameOverText.getLocalBounds();
+    gameOverText.setOrigin(goBounds.width / 2.f, goBounds.height / 2.f);
+
+    sf::Text restartText;
+    restartText.setFont(font);
+    restartText.setString("PRESS 'R' TO RESTART");
+    restartText.setCharacterSize(40);
+    restartText.setFillColor(sf::Color::White);
+    restartText.setOutlineColor(sf::Color::Black);
+    restartText.setOutlineThickness(3.f);
+
+    sf::FloatRect rBounds = restartText.getLocalBounds();
+    restartText.setOrigin(rBounds.width / 2.f, rBounds.height / 2.f);
 
     sf::Texture carsTexture;
     if (!carsTexture.loadFromFile("assets/bk_cars1.a.png")) return -1;
@@ -96,25 +156,25 @@ int main() {
     bool treeLoaded = treeTexture.loadFromFile("assets/tree1.png");
 
     sf::Texture waterTexture;
-	bool waterLoaded = waterTexture.loadFromFile("assets/water.jpg");
-	if (waterLoaded) {
-		waterTexture.setRepeated(true);
-	}
+    bool waterLoaded = waterTexture.loadFromFile("assets/water.jpg");
+    if (waterLoaded) {
+        waterTexture.setRepeated(true);
+    }
     sf::Sprite waterSprite;
     if (waterLoaded) {
-		waterSprite.setTexture(waterTexture);
-		waterSprite.setScale(1.f, 1.f);
+        waterSprite.setTexture(waterTexture);
+        waterSprite.setScale(1.f, 1.f);
     }
     float waterScrollSpeed = 80.f;
-	float currentWaterOffset = 0.f;
+    float currentWaterOffset = 0.f;
 
     sf::IntRect playerRect(72, 446, 51, 96);
     std::vector<sf::IntRect> npcTypes = {
-        sf::IntRect(7, 16, 52, 135),   
-        sf::IntRect(129, 16, 49, 93),  
-        sf::IntRect(189, 16, 50, 97),  
-        sf::IntRect(426, 21, 60, 137), 
-        sf::IntRect(308, 20, 52, 92),  
+        sf::IntRect(7, 16, 52, 135),
+        sf::IntRect(129, 16, 49, 93),
+        sf::IntRect(189, 16, 50, 97),
+        sf::IntRect(426, 21, 60, 137),
+        sf::IntRect(308, 20, 52, 92),
         sf::IntRect(247, 123, 52, 92),
         sf::IntRect(189, 120, 51, 100),
         sf::IntRect(65, 120, 51, 100),
@@ -173,7 +233,7 @@ int main() {
     }
 
     std::vector<Prop> forest;
-    float forestChunkSize = 25000.f; 
+    float forestChunkSize = 25000.f;
 
     if (treeLoaded && !treeTypes.empty()) {
         for (float y = 1000.f; y < 1100.f; y += 30.f) {
@@ -199,14 +259,54 @@ int main() {
             return a.y < b.y;
             });
     }
-    
+
     while (window.isOpen()) {
         sf::Event event;
-        while (window.pollEvent(event)) { if (event.type == sf::Event::Closed) window.close(); }
+        while (window.pollEvent(event)) {
+            if (event.type == sf::Event::Closed) 
+                window.close();
+            if (currentState == GAMEOVER && event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::R) {
+                currentState = PLAYING;
+				int restartLane = std::uniform_int_distribution<>(3, 5)(gen);
+                player.position = { 300.f, lanesY[restartLane]};
+                player.velocity = { 0.f, 0.f };
+                player.acceleration = { 0.f, 0.f };
+                traffic.clear();
+                for (int i = 0; i < 34; ++i) {
+                    int laneIndex = (i < 15) ? std::uniform_int_distribution<>(0, 2)(gen) : std::uniform_int_distribution<>(3, 5)(gen);
+                    float dirX = (i < 15) ? -speedDist(gen) : speedDist(gen);
+                    float spawnX = static_cast<float>((gen() % 15000) - 5000);
+                    int chance = std::uniform_int_distribution<>(1, 100)(gen);
+                    int selectedIdx = 0;
+                    if (chance <= 3) selectedIdx = 0;
+                    else if (chance <= 7) selectedIdx = 1;
+                    else if (chance <= 10) selectedIdx = 2;
+                    else if (chance <= 13) selectedIdx = 3;
+                    else selectedIdx = std::uniform_int_distribution<>(4, (int)npcTypes.size() - 1)(gen);
+                    float npcSpeed = std::uniform_real_distribution<float>(350.f, 550.f)(gen);
+                    traffic.emplace_back(Vec2{ spawnX, lanesY[laneIndex] }, Vec2{ dirX, 0.f }, carsTexture, npcTypes[selectedIdx], npcSpeed, 1.0f, laneIndex);
+                    traffic.back().canOvertake = (std::uniform_int_distribution<>(1, 3)(gen) == 1);
+                }
+                if (engineLoaded) {
+                    engineSound.setPitch(1.0f);
+                    if (engineSound.getStatus() != sf::Sound::Playing)
+                        engineSound.play();
+                }
+            }
+        }
 
         float frameTime = clock.restart().asSeconds();
         if (frameTime > 0.25f) frameTime = 0.25f;
-        accumulator += frameTime;
+        if (currentState == PLAYING) {
+			accumulator += frameTime;
+		}
+        else {
+            accumulator = 0;
+        }
+
+        if (waterLoaded && currentState==PLAYING) {
+            currentWaterOffset += waterScrollSpeed * frameTime;
+        }
 
         float speedFactor = std::abs(player.velocity.x) / player.maxSpeed;
         float maneuverability = 1.0f - (speedFactor * 0.32f);
@@ -244,11 +344,9 @@ int main() {
                         if (isAhead && dist < 400.f) {
                             bool overtaked = false;
                             if (traffic[i].canOvertake && !traffic[i].isChangingLane && traffic[i].laneChangeCooldown <= 0.f) {
-
                                 int side = (traffic[i].currentLane <= 2) ? 0 : 1;
                                 int minL = (side == 0) ? 0 : 3;
                                 int maxL = (side == 0) ? 2 : 5;
-
                                 bool upFree = (traffic[i].currentLane > minL);
                                 bool downFree = (traffic[i].currentLane < maxL);
 
@@ -385,38 +483,56 @@ int main() {
 
             player.update(fixedDt, true);
 
+            if (engineLoaded) {
+                float speedRatio = std::abs(player.velocity.x) / player.maxSpeed;
+                float newPitch = 1.1f + (speedRatio * 1.2f);
+                engineSound.setPitch(newPitch);
+            }
+
             for (auto& npc : traffic) {
                 sf::FloatRect pB = player.sprite.getGlobalBounds();
                 sf::FloatRect nB = npc.sprite.getGlobalBounds();
                 sf::FloatRect overlap;
                 if (pB.intersects(nB, overlap)) {
-                    if (overlap.width < overlap.height) {
-                        player.position.y += (player.position.y < npc.position.y) ? -1.1f : 1.1f;
-                        player.velocity.y *= 0.75f; player.velocity.x *= 0.995f;
+
+                    if (std::abs(player.velocity.x) >= player.maxSpeed * 0.85f) {
+                        if (currentState == PLAYING) {
+                            currentState = GAMEOVER;
+                            engineSound.stop();
+                            crashSound.play();
+                        }
+                        break;
                     }
                     else {
-                        player.position.x = npc.position.x + (player.position.x < npc.position.x ? -105.f : 105.f);
-                        player.velocity.x = npc.velocity.x * (player.position.x < npc.position.x ? 0.7f : 1.1f);
+                        if (overlap.width < overlap.height) {
+                            player.position.y += (player.position.y < npc.position.y) ? -1.1f : 1.1f;
+                            player.velocity.y *= 0.75f; player.velocity.x *= 0.995f;
+                        }
+                        else {
+                            player.position.x = npc.position.x + (player.position.x < npc.position.x ? -105.f : 105.f);
+                            player.velocity.x = npc.velocity.x * (player.position.x < npc.position.x ? 0.7f : 1.1f);
+                        }
                     }
+
                 }
             }
             accumulator -= fixedDt;
             float forestChunk = 20000.f;
-			for (auto& p : forest) {
-				if (p.x < camera.getCenter().x-3000.f) {
-					p.x += forestChunk;
-					p.sprite.setPosition(p.x, p.y);
-				}
-				else if (p.x > camera.getCenter().x+17000.f) {
-					p.x -= forestChunk;
-					p.sprite.setPosition(p.x, p.y);
-				}
-			}
+            for (auto& p : forest) {
+                if (p.x < camera.getCenter().x - 3000.f) {
+                    p.x += forestChunk;
+                    p.sprite.setPosition(p.x, p.y);
+                }
+                else if (p.x > camera.getCenter().x + 17000.f) {
+                    p.x -= forestChunk;
+                    p.sprite.setPosition(p.x, p.y);
+                }
+            }
         }
 
         float alpha = accumulator / fixedDt;
         window.clear(sf::Color(30, 30, 30));
-        Vec2 pPos = Lerp(player.previousPosition, player.position, alpha);
+		Vec2 pPos = (currentState == PLAYING) ? Lerp(player.previousPosition, player.position, alpha) : player.position;
         camera.setCenter(pPos.x + 600.f, 540.f);
         window.setView(camera);
         float vL = camera.getCenter().x - 960.f;
@@ -428,6 +544,12 @@ int main() {
             waterSprite.setTextureRect(sf::IntRect(texX, texY, (int)((vR - vL) / waterSprite.getScale().x), (int)(150 / waterSprite.getScale().y)));
             waterSprite.setPosition(vL, 0.f);
             window.draw(waterSprite);
+        }
+        else {
+            sf::RectangleShape seaRect(sf::Vector2f(vR - vL, 150.f));
+            seaRect.setPosition(vL, 0.f);
+            seaRect.setFillColor(sf::Color(0, 105, 148));
+            window.draw(seaRect);
         }
 
         sf::RectangleShape rect(sf::Vector2f(vR - vL, 150.f));
@@ -452,10 +574,25 @@ int main() {
         }
 
         for (auto& npc : traffic) {
-            Vec2 rPos = Lerp(npc.previousPosition, npc.position, alpha);
+			Vec2 rPos = (currentState == PLAYING) ? Lerp(npc.previousPosition, npc.position, alpha) : npc.position;
             npc.sprite.setPosition(rPos.x, rPos.y); window.draw(npc.sprite);
         }
-        player.sprite.setPosition(pPos.x, pPos.y); window.draw(player.sprite);
+        player.sprite.setPosition(pPos.x, pPos.y); 
+        window.draw(player.sprite);
+		if (currentState == GAMEOVER) {
+			sf::Vector2f center = camera.getCenter();
+			sf::RectangleShape overlay(sf::Vector2f(1920.f, 1080.f));
+			overlay.setOrigin(960.f, 540.f);
+			overlay.setPosition(center);
+			overlay.setFillColor(sf::Color(0, 0, 0, 150));
+			window.draw(overlay);
+
+			gameOverText.setPosition(center.x, center.y - 50.f);
+			restartText.setPosition(center.x, center.y + 70.f);
+
+			window.draw(gameOverText);
+			window.draw(restartText);
+            }
         window.display();
     }
     return 0;
