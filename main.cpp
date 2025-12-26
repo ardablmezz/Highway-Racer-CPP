@@ -5,9 +5,12 @@
 #include <cmath>
 #include <random>
 #include <iostream>
+#include <fstream>
 
 enum GameState {
-	PLAYING,
+	MENU,
+    PLAYING,
+    PAUSED,
 	GAMEOVER
 };
 
@@ -90,13 +93,13 @@ struct Car {
 };
 
 int main() {
-    sf::RenderWindow window(sf::VideoMode(1920, 1080), "Highway Racer - v3.1");
+    sf::RenderWindow window(sf::VideoMode(1920, 1080), "Highway Racer - v3.2");
     window.setFramerateLimit(144);
     sf::View camera(sf::FloatRect(0.f, .0f, 1920.f, 1080.f));
     std::random_device rd;
     std::mt19937 gen(rd());
 
-	GameState currentState = PLAYING;
+	GameState currentState = MENU;
     sf::SoundBuffer engineBuffer;
     bool engineLoaded = engineBuffer.loadFromFile("assets/engine.wav");
 
@@ -105,10 +108,19 @@ int main() {
         engineSound.setBuffer(engineBuffer);
         engineSound.setLoop(true);
         engineSound.setVolume(85.f);
-        engineSound.play();
     }
     else {
         std::cout << "HATA: engine.wav bulunamadi." << std::endl;
+    }
+
+    sf::SoundBuffer menuBuffer;
+	bool menuAudioLoaded = menuBuffer.loadFromFile("assets/menu.wav");
+	sf::Sound menuSound;
+    if (menuAudioLoaded) {
+        menuSound.setBuffer(menuBuffer);
+        menuSound.setLoop(true);
+        menuSound.setVolume(50.f);
+        menuSound.play();
     }
 
     sf::SoundBuffer crashBuffer;
@@ -121,10 +133,8 @@ int main() {
     }
     
     sf::Font font;
-    if (!font.loadFromFile("C:/Windows/Fonts/arial.ttf")) {
-        if (!font.loadFromFile("assets/fixedsys.fon")) {
-            std::cout << "HATA: Font dosyasi yuklenemedi!" << std::endl;
-        }
+    if (!font.loadFromFile("assets/FSEX300.ttf")) {
+        std::cout << "HATA: Font dosyasi yuklenemedi!" << std::endl;
     }
     sf::Text gameOverText;
     gameOverText.setFont(font);
@@ -145,6 +155,67 @@ int main() {
     restartText.setFillColor(sf::Color::White);
     restartText.setOutlineColor(sf::Color::Black);
     restartText.setOutlineThickness(3.f);
+
+    sf::Text titleText;
+	titleText.setFont(font);
+	titleText.setString("HIGHWAY RACER");
+	titleText.setCharacterSize(100);
+	titleText.setFillColor(sf::Color::Yellow);
+	titleText.setStyle(sf::Text::Bold);
+	sf::FloatRect tBounds = titleText.getLocalBounds();
+	titleText.setOrigin(tBounds.width / 2.f, tBounds.height / 2.f);
+
+    sf::Text startText;
+	startText.setFont(font);
+	startText.setString("PRESS 'ENTER' TO START");
+	startText.setCharacterSize(40);
+	startText.setFillColor(sf::Color::White);
+	sf::FloatRect sBounds = startText.getLocalBounds();
+	startText.setOrigin(sBounds.width / 2.f, sBounds.height / 2.f);
+
+    sf::Text pauseText;
+	pauseText.setFont(font);
+	pauseText.setString("PAUSED");
+	pauseText.setCharacterSize(80);
+	pauseText.setFillColor(sf::Color::Cyan);
+	pauseText.setOutlineColor(sf::Color::Black);
+	pauseText.setOutlineThickness(3.f);
+    sf::FloatRect pBounds = pauseText.getLocalBounds();
+	pauseText.setOrigin(pBounds.width / 2.f, pBounds.height / 2.f);
+
+    sf::Text pauseSubText;
+    pauseSubText.setFont(font);
+    pauseSubText.setString("PRESS 'ESC' TO CONTINUE");
+    pauseSubText.setCharacterSize(30);
+    pauseSubText.setFillColor(sf::Color::White);
+    pauseSubText.setOutlineColor(sf::Color::Black);
+    pauseSubText.setOutlineThickness(2.f);
+    sf::FloatRect psBounds = pauseSubText.getLocalBounds();
+    pauseSubText.setOrigin(psBounds.width / 2.f, psBounds.height / 2.f);
+
+	sf::Text returnMenuText;
+	returnMenuText.setFont(font);
+	returnMenuText.setString("PRESS 'M' TO RETURN TO MENU");
+	returnMenuText.setCharacterSize(30);
+	returnMenuText.setFillColor(sf::Color::White);
+	returnMenuText.setOutlineColor(sf::Color::Black);
+	returnMenuText.setOutlineThickness(2.f);
+	sf::FloatRect rmBounds = returnMenuText.getLocalBounds();
+	returnMenuText.setOrigin(rmBounds.width / 2.f, rmBounds.height / 2.f);
+
+	sf::Text scoreText;
+	scoreText.setFont(font);
+	scoreText.setCharacterSize(35);
+	scoreText.setFillColor(sf::Color::White);
+	scoreText.setOutlineColor(sf::Color::Black);
+	scoreText.setOutlineThickness(2.f);
+
+	sf::Text highScoreText;
+	highScoreText.setFont(font);
+	highScoreText.setCharacterSize(35);
+	highScoreText.setFillColor(sf::Color::Yellow);
+	highScoreText.setOutlineColor(sf::Color::Black);
+	highScoreText.setOutlineThickness(2.f);
 
     sf::FloatRect rBounds = restartText.getLocalBounds();
     restartText.setOrigin(rBounds.width / 2.f, rBounds.height / 2.f);
@@ -194,9 +265,21 @@ int main() {
     float lanesY[6] = { 240.f, 360.f, 480.f, 610.f, 730.f, 845.f };
     const float fixedDt = 1.0f / 60.0f;
     float accumulator = 0.0f;
+	float menuTimer = 0.0f;
+
+    float score = 0.f;
+	float highScore = 0.f;
+	bool isNewRecord = false;
+
+	std::ifstream inputFile("highscore.txt");
+    if (inputFile.is_open()) {
+        inputFile >> highScore;
+        inputFile.close();
+    }
+
     sf::Clock clock;
 
-    Car player({ 300.f, 810.f }, { 0.f, 0.f }, carsTexture, playerRect, 600.f, 0.96f, 5);
+    Car player({ 300.f, 810.f }, { 0.f, 0.f }, carsTexture, playerRect, 800.f, 0.96f, 5);
     float playerAccelX = 600.f;
     float playerAccelY = 500.f;
 
@@ -265,8 +348,26 @@ int main() {
         while (window.pollEvent(event)) {
             if (event.type == sf::Event::Closed) 
                 window.close();
+            if (currentState == MENU && event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Enter) {
+                currentState = PLAYING;
+				menuSound.stop();
+                if (engineLoaded) engineSound.play();
+            }
+
+            if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Escape) {
+                if (currentState == PLAYING) {
+                    currentState = PAUSED;
+                    engineSound.pause();
+                }
+                else if (currentState == PAUSED) {
+                    currentState = PLAYING;
+                    engineSound.play();
+                }
+            }
             if (currentState == GAMEOVER && event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::R) {
                 currentState = PLAYING;
+				score = 0.f;
+				isNewRecord = false;
 				int restartLane = std::uniform_int_distribution<>(3, 5)(gen);
                 player.position = { 300.f, lanesY[restartLane]};
                 player.velocity = { 0.f, 0.f };
@@ -287,15 +388,95 @@ int main() {
                     traffic.emplace_back(Vec2{ spawnX, lanesY[laneIndex] }, Vec2{ dirX, 0.f }, carsTexture, npcTypes[selectedIdx], npcSpeed, 1.0f, laneIndex);
                     traffic.back().canOvertake = (std::uniform_int_distribution<>(1, 3)(gen) == 1);
                 }
+                forest.clear();
+                if (treeLoaded && !treeTypes.empty()) {
+                    for (float y = 1000.f; y < 1100.f; y += 30.f) {
+                        for (float x = -5000.f; x < 20000.f; x += 130.f) {
+                            Prop p;
+                            p.sprite.setTexture(treeTexture);
+                            int typeIdx = std::uniform_int_distribution<>(0, (int)treeTypes.size() - 1)(gen);
+                            p.sprite.setTextureRect(treeTypes[typeIdx]);
+                            float offsetX = (float)(gen() % 100);
+                            float offsetY = (float)(gen() % 40);
+                            p.x = x + offsetX;
+                            p.y = y + offsetY;
+                            p.sprite.setPosition(p.x, p.y);
+                            sf::FloatRect b = p.sprite.getLocalBounds();
+                            p.sprite.setOrigin(b.width / 2.f, b.height);
+                            float depthScale = 1.0f + ((y - 920.f) / 230.f) * 0.5f;
+                            p.sprite.setScale(depthScale, depthScale);
+                            forest.push_back(p);
+                        }
+                    }
+                    std::sort(forest.begin(), forest.end(), [](const Prop& a, const Prop& b) {
+                        return a.y < b.y;
+                        });
+                }
                 if (engineLoaded) {
                     engineSound.setPitch(1.0f);
                     if (engineSound.getStatus() != sf::Sound::Playing)
                         engineSound.play();
                 }
             }
+            if (currentState == PAUSED && event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::M) {
+                currentState = MENU;
+				score = 0.f;
+				isNewRecord = false;
+                engineSound.stop();
+				if (menuAudioLoaded) menuSound.play();
+
+                int restartLane = std::uniform_int_distribution<>(3, 5)(gen);
+                player.position = { 300.f, lanesY[restartLane] };
+                player.velocity = { 0.f, 0.f };
+                player.acceleration = { 0.f, 0.f };
+
+                traffic.clear();
+                for (int i = 0; i < 34; ++i) {
+                    int laneIndex = (i < 15) ? std::uniform_int_distribution<>(0, 2)(gen) : std::uniform_int_distribution<>(3, 5)(gen);
+                    float dirX = (i < 15) ? -speedDist(gen) : speedDist(gen);
+                    float spawnX = static_cast<float>((gen() % 15000) - 5000);
+
+                    int chance = std::uniform_int_distribution<>(1, 100)(gen);
+                    int selectedIdx = 0;
+                    if (chance <= 3) selectedIdx = 0;
+                    else if (chance <= 7) selectedIdx = 1;
+                    else if (chance <= 10) selectedIdx = 2;
+                    else if (chance <= 13) selectedIdx = 3;
+                    else selectedIdx = std::uniform_int_distribution<>(4, (int)npcTypes.size() - 1)(gen);
+
+                    float npcSpeed = std::uniform_real_distribution<float>(350.f, 550.f)(gen);
+                    traffic.emplace_back(Vec2{ spawnX, lanesY[laneIndex] }, Vec2{ dirX, 0.f }, carsTexture, npcTypes[selectedIdx], npcSpeed, 1.0f, laneIndex);
+                    traffic.back().canOvertake = (std::uniform_int_distribution<>(1, 3)(gen) == 1);
+                }
+                forest.clear();
+                if (treeLoaded && !treeTypes.empty()) {
+                    for (float y = 1000.f; y < 1100.f; y += 30.f) {
+                        for (float x = -5000.f; x < 20000.f; x += 130.f) {
+                            Prop p;
+                            p.sprite.setTexture(treeTexture);
+                            int typeIdx = std::uniform_int_distribution<>(0, (int)treeTypes.size() - 1)(gen);
+                            p.sprite.setTextureRect(treeTypes[typeIdx]);
+                            float offsetX = (float)(gen() % 100);
+                            float offsetY = (float)(gen() % 40);
+                            p.x = x + offsetX;
+                            p.y = y + offsetY;
+                            p.sprite.setPosition(p.x, p.y);
+                            sf::FloatRect b = p.sprite.getLocalBounds();
+                            p.sprite.setOrigin(b.width / 2.f, b.height);
+                            float depthScale = 1.0f + ((y - 920.f) / 230.f) * 0.5f;
+                            p.sprite.setScale(depthScale, depthScale);
+                            forest.push_back(p);
+                        }
+                    }
+                    std::sort(forest.begin(), forest.end(), [](const Prop& a, const Prop& b) {
+                        return a.y < b.y;
+                        });
+                }
+            }
         }
 
         float frameTime = clock.restart().asSeconds();
+		menuTimer += frameTime;
         if (frameTime > 0.25f) frameTime = 0.25f;
         if (currentState == PLAYING) {
 			accumulator += frameTime;
@@ -304,7 +485,7 @@ int main() {
             accumulator = 0;
         }
 
-        if (waterLoaded && currentState==PLAYING) {
+        if (waterLoaded && (currentState==PLAYING || currentState==MENU)) {
             currentWaterOffset += waterScrollSpeed * frameTime;
         }
 
@@ -483,6 +664,36 @@ int main() {
 
             player.update(fixedDt, true);
 
+            if (currentState == PLAYING) {
+                float multiplier = 1.0f;
+
+                if (player.position.y < 545.f) {
+                    multiplier *= 2.0f;
+                }
+
+                bool isOvertaking = false;
+                for (const auto& npc : traffic) {
+                    float dx = std::abs(player.position.x - npc.position.x);
+                    float dy = std::abs(player.position.y - npc.position.y);
+
+                    if (dx < 220.f && dy < 90.f && std::abs(player.velocity.x) > 400.f) {
+                        isOvertaking = true;
+                        break;
+                    }
+                }
+
+                if (isOvertaking) {
+                    multiplier *= 1.7f;
+                }
+
+                score += ((std::abs(player.velocity.x) * fixedDt) / 100.f) * multiplier;
+
+                if (score > highScore) {
+                    highScore = score;
+                    isNewRecord = true;
+                }
+            }
+
             if (engineLoaded) {
                 float speedRatio = std::abs(player.velocity.x) / player.maxSpeed;
                 float newPitch = 1.1f + (speedRatio * 1.2f);
@@ -500,6 +711,13 @@ int main() {
                             currentState = GAMEOVER;
                             engineSound.stop();
                             crashSound.play();
+                            if (isNewRecord) {
+                                std::ofstream outputFile("highscore.txt");
+                                if (outputFile.is_open()) {
+                                    outputFile << (int)highScore;
+                                    outputFile.close();
+                                }
+                            }
                         }
                         break;
                     }
@@ -573,12 +791,33 @@ int main() {
             }
         }
 
-        for (auto& npc : traffic) {
-			Vec2 rPos = (currentState == PLAYING) ? Lerp(npc.previousPosition, npc.position, alpha) : npc.position;
-            npc.sprite.setPosition(rPos.x, rPos.y); window.draw(npc.sprite);
+        if (currentState != MENU) {
+            for (auto& npc : traffic) {
+                Vec2 rPos = (currentState == PLAYING) ? Lerp(npc.previousPosition, npc.position, alpha) : npc.position;
+                npc.sprite.setPosition(rPos.x, rPos.y); window.draw(npc.sprite);
+            }
+            player.sprite.setPosition(pPos.x, pPos.y);
+            window.draw(player.sprite);
+
+			sf::Vector2f camCenter = camera.getCenter();
+			scoreText.setString("SCORE: " + std::to_string((int)score));
+			scoreText.setPosition(camCenter.x - 900.f, 20.f);
+			window.draw(scoreText);
+
+            if (isNewRecord) {
+                highScoreText.setString("NEW RECORD!");
+                highScoreText.setFillColor(sf::Color::Red);
+                float blink = (std::sin(menuTimer * 10.f) + 1.f) / 2.f * 255.f;
+                highScoreText.setFillColor(sf::Color(255, 50, 50, (sf::Uint8)blink));
+            }
+            else {
+                highScoreText.setString("HIGH SCORE: " + std::to_string((int)highScore));
+                highScoreText.setFillColor(sf::Color::Yellow);
+            }
+			highScoreText.setPosition(camCenter.x + 650.f, 20.f);
+			window.draw(highScoreText);
         }
-        player.sprite.setPosition(pPos.x, pPos.y); 
-        window.draw(player.sprite);
+
 		if (currentState == GAMEOVER) {
 			sf::Vector2f center = camera.getCenter();
 			sf::RectangleShape overlay(sf::Vector2f(1920.f, 1080.f));
@@ -591,8 +830,49 @@ int main() {
 			restartText.setPosition(center.x, center.y + 70.f);
 
 			window.draw(gameOverText);
+			
+			float blinkAlpha = (std::sin(menuTimer * 5.f) + 1.f) / 2.f * 255.f;
+			restartText.setFillColor(sf::Color(255, 255, 255, static_cast<sf::Uint8>(blinkAlpha)));
+			restartText.setPosition(center.x, center.y + 70.f);
 			window.draw(restartText);
             }
+        sf::Vector2f center = camera.getCenter();
+
+        if (currentState == MENU) {
+            sf::RectangleShape overlay(sf::Vector2f(1920.f, 1080.f));
+            overlay.setOrigin(960.f, 540.f);
+            overlay.setPosition(center);
+            overlay.setFillColor(sf::Color(0, 0, 0, 200));
+            window.draw(overlay);
+
+            titleText.setPosition(center.x, center.y - 80.f);
+            window.draw(titleText);
+
+            float blinkAlpha = (std::sin(menuTimer * 5.f) + 1.f) / 2.f * 255.f;
+			startText.setFillColor(sf::Color(255, 255, 255, static_cast<sf::Uint8>(blinkAlpha)));
+			startText.setPosition(center.x, center.y + 120.f);
+			window.draw(startText);
+        }
+
+        if (currentState == PAUSED) {
+            sf::RectangleShape overlay(sf::Vector2f(1920.f, 1080.f));
+            overlay.setOrigin(960.f, 540.f);
+            overlay.setPosition(center);
+            overlay.setFillColor(sf::Color(0, 0, 0, 100));
+            window.draw(overlay);
+
+            pauseText.setPosition(center.x,center.y -20.f);
+            window.draw(pauseText);
+
+			float blinkAlpha = (std::sin(menuTimer * 5.f) + 1.f) / 2.f * 255.f;
+			pauseSubText.setFillColor(sf::Color(255, 255, 255, static_cast<sf::Uint8>(blinkAlpha)));
+            pauseSubText.setPosition(center.x, center.y + 100.f);
+			window.draw(pauseSubText);
+
+            returnMenuText.setFillColor(sf::Color(255, 255, 255, static_cast<sf::Uint8>(blinkAlpha)));
+            returnMenuText.setPosition(center.x, center.y + 150.f);
+            window.draw(returnMenuText);
+        }
         window.display();
     }
     return 0;
